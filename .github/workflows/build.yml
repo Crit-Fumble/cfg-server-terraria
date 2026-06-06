@@ -1,0 +1,69 @@
+name: Build + publish image
+
+# Builds cfg-server-terraria and publishes to ghcr.io.
+#   - main branch push → :latest + :main-<short-sha>
+#   - tagged release (v*) → :<tag> + :latest
+#
+# Multi-arch: linux/amd64 only. The Terraria server binary is
+# x86_64-glibc — there is no upstream arm64 build, so building for arm64
+# would silently produce an image that crashes on boot.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      terraria_version:
+        description: 'Terraria server version (e.g. 1456 for 1.4.5.6)'
+        required: false
+        default: '1456'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cfg-server-terraria
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=main-,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build + push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            TERRARIA_VERSION=${{ github.event.inputs.terraria_version || '1456' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
