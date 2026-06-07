@@ -50,5 +50,33 @@ EOF
 fi
 
 cd /opt/terraria
-echo "[cfg-server-terraria] starting Terraria server on port ${TERRARIA_PORT:-7777}"
-exec ./TerrariaServer.bin.x86_64 -config "$CONFIG"
+
+# IMPORTANT: don't use `-config` — autocreate is silently ignored when
+# Terraria 1.4.5+ reads it via config file. The server boots into a
+# "no world loaded" state, players see an empty void, and the next
+# tile-related code path crashes with a fatal NullReferenceException.
+# CLI flags are documented + reliable. The serverconfig.txt is kept
+# on disk for human-readability + ops introspection, but the live
+# server is driven by the flags below.
+
+WORLD_SIZE="${TERRARIA_AUTOCREATE:-2}"
+PORT_NUM="${TERRARIA_PORT:-7777}"
+MAX_P="${TERRARIA_MAXPLAYERS:-16}"
+DIFF="${TERRARIA_DIFFICULTY:-0}"
+PASS_ARG=""
+if [ -n "${TERRARIA_PASSWORD:-}" ]; then
+  PASS_ARG="-password ${TERRARIA_PASSWORD}"
+fi
+
+echo "[cfg-server-terraria] starting Terraria server on port $PORT_NUM (world=$WORLD_FILE, autocreate=$WORLD_SIZE)"
+# shellcheck disable=SC2086  # PASS_ARG must word-split
+exec ./TerrariaServer.bin.x86_64 \
+  -world "$WORLD_FILE" \
+  -autocreate "$WORLD_SIZE" \
+  -worldname "$WORLD_NAME" \
+  -port "$PORT_NUM" \
+  -players "$MAX_P" \
+  -difficulty "$DIFF" \
+  -secure \
+  -noupnp \
+  $PASS_ARG
