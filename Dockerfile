@@ -63,7 +63,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates libstdc++6 libgcc-s1 tini && \
     rm -rf /var/lib/apt/lists/* && \
-    useradd --system --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin terraria
+    useradd --system --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin terraria && \
+    # Terraria writes a `favorites.json` to $HOME/.local/share/Terraria on
+    # first boot. With --no-create-home, $HOME doesn't exist and the
+    # write throws a DirectoryNotFoundException at startup (non-fatal —
+    # the server catches it and continues — but noisy in logs). Pre-create
+    # the dir tree so the favorites write succeeds silently.
+    mkdir -p /home/terraria/.local/share/Terraria && \
+    chown -R terraria:terraria /home/terraria
 
 COPY --from=extract /opt/terraria /opt/terraria
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
