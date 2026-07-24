@@ -1,11 +1,19 @@
 # syntax=docker/dockerfile:1.7
 #
-# cfg-server-terraria — thin container around the official Terraria dedicated
-# server binary. No mods, no plugins, no Steam dependency — just the upstream
-# server zip from terraria.org, extracted onto debian-slim, run as non-root.
+# cfg-server-terraria — Terraria dedicated server container, running TShock.
 #
-# Worlds live in /worlds (volume mount). The entrypoint generates a minimal
-# serverconfig.txt from env vars on first boot if none is mounted.
+# TShock (Pryaxis/TShock) wraps the official server engine 1:1 for gameplay —
+# existing vanilla .wld worlds load unchanged — and adds the piece the platform
+# needs that vanilla flatly lacks: a remote-admin surface. Its REST API is what
+# core-server's activity probe polls for the live player list (idle-shutdown,
+# the Avatars tab); vanilla's only admin channel is an interactive stdin
+# console, which is useless from another container. Each TShock release is
+# built against ONE exact Terraria version, so TSHOCK_VERSION and
+# TERRARIA_COMPAT below move in lockstep — take both from the release name.
+#
+# Worlds live in /worlds (volume mount). TShock's own state (config.json,
+# sqlite DB, logs) lives in /worlds/tshock — ON THE VOLUME — so users, groups,
+# and bans survive container replacement.
 #
 # Build:
 #   docker build -t cfg-server-terraria:local .
@@ -16,16 +24,17 @@
 # CFG-hosted: core-server provisions one container per user installation via
 # the Server Manager kind-registry (kinds/terraria.ts → services/terraria/launch.ts).
 
-ARG TERRARIA_VERSION=1456
+ARG TSHOCK_VERSION=6.1.0
+ARG TERRARIA_COMPAT=1.4.5.6
 
 FROM debian:bookworm-slim AS extract
 
-ARG TERRARIA_VERSION
-ARG TERRARIA_URL=https://terraria.org/api/download/pc-dedicated-server/terraria-server-${TERRARIA_VERSION}.zip
+ARG TSHOCK_VERSION
+ARG TERRARIA_COMPAT
+# TARGETARCH is amd64 in CI/prod; TShock also publishes linux-arm64, which
+# makes native local verification possible on Apple-silicon dev machines.
+ARG TARGETARCH
 
-# Download + unpack in a build stage so the final image doesn't carry unzip
-# or the original zip. The official zip ships Windows + Mac + Linux builds
-# side-by-side; we keep only Linux.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -34,41 +43,48 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-RUN curl -fsSLo terraria.zip "$TERRARIA_URL" && \
-    unzip -q terraria.zip && \
-    rm terraria.zip && \
-    # Zip extracts as `<version>/Linux/`, `<version>/Mac/`, `<version>/Windows/`.
-    # Flatten the Linux dir to /opt/terraria and discard the rest.
-    mv */Linux /opt/terraria && \
-    rm -rf /build/* && \
-    chmod +x /opt/terraria/TerrariaServer.bin.x86_64
+# Release asset: a zip wrapping a tar (their packaging quirk — the inner tar
+# keeps a "TShock-Beta-*" name even on stable releases, hence the glob).
+RUN case "$TARGETARCH" in \
+      arm64) TSHOCK_ARCH=linux-arm64 ;; \
+      *)     TSHOCK_ARCH=linux-x64 ;; \
+    esac && \
+    curl -fsSLo tshock.zip "https://github.com/Pryaxis/TShock/releases/download/v${TSHOCK_VERSION}/TShock-${TSHOCK_VERSION}-for-Terraria-${TERRARIA_COMPAT}-${TSHOCK_ARCH}-Release.zip" && \
+    unzip -q tshock.zip && \
+    rm tshock.zip && \
+    mkdir /opt/terraria && \
+    tar -xf TShock-*-Release.tar -C /opt/terraria && \
+    rm -f TShock-*-Release.tar /opt/terraria/TShock.Installer && \
+    chmod +x /opt/terraria/TShock.Server
 
 # ── Final runtime image ─────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+# TShock 6's TShock.Server is a FRAMEWORK-DEPENDENT .NET 9 apphost (verified
+# empirically — it aborts with "You must install .NET" on a bare Debian base),
+# so the runtime comes from the official image. `runtime`, not `aspnet`:
+# TShock's REST server is plain-BCL HTTP, no ASP.NET Core dependency.
+FROM mcr.microsoft.com/dotnet/runtime:9.0-bookworm-slim
 
-ARG TERRARIA_VERSION
+ARG TSHOCK_VERSION
+ARG TERRARIA_COMPAT
 LABEL org.opencontainers.image.title="cfg-server-terraria"
-LABEL org.opencontainers.image.description="Crit-Fumble Terraria dedicated server container"
+LABEL org.opencontainers.image.description="Crit-Fumble Terraria dedicated server container (TShock)"
 LABEL org.opencontainers.image.source="https://github.com/Crit-Fumble/cfg-server-terraria"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
-LABEL org.opencontainers.image.version="${TERRARIA_VERSION}"
+LABEL org.opencontainers.image.version="${TSHOCK_VERSION}-terraria${TERRARIA_COMPAT}"
 
-# Terraria's server binary is a 64-bit native ELF that needs libstdc++ +
-# libgcc at runtime. tini reaps zombie processes and forwards SIGTERM so
-# `docker stop` actually shuts the server cleanly (Terraria writes worlds
-# on graceful exit; SIGKILL leaves dirty .wld files).
+# tini reaps zombies and forwards SIGTERM so `docker stop` shuts the server
+# cleanly (worlds are written on graceful exit; SIGKILL leaves dirty .wld
+# files). The .NET base image already carries ICU/zlib/libstdc++.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates libstdc++6 libgcc-s1 tini && \
+      tini && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --system --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin terraria && \
-    # Terraria writes a `favorites.json` to $HOME/.local/share/Terraria on
-    # first boot. With --no-create-home, $HOME doesn't exist and the
-    # write throws a DirectoryNotFoundException at startup (non-fatal —
-    # the server catches it and continues — but noisy in logs). Pre-create
-    # the dir tree so the favorites write succeeds silently.
+    # The engine writes favorites.json to $HOME/.local/share/Terraria on first
+    # boot; with --no-create-home that throws a (caught but noisy)
+    # DirectoryNotFoundException. Pre-create the tree so the write succeeds.
     mkdir -p /home/terraria/.local/share/Terraria && \
     chown -R terraria:terraria /home/terraria
 
@@ -76,7 +92,8 @@ COPY --from=extract /opt/terraria /opt/terraria
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# /worlds: where saved worlds live. Mount a per-installation host dir here.
+# /worlds: saved worlds + TShock state (/worlds/tshock). Mount a
+# per-installation host dir here.
 # /opt/terraria: read-only binary tree; non-root user owns nothing in it.
 RUN mkdir -p /worlds && chown -R terraria:terraria /worlds
 
@@ -84,12 +101,18 @@ USER terraria
 WORKDIR /worlds
 
 EXPOSE 7777/tcp
+# TShock REST API — core-server's activity probe + Avatars roster read it.
+# NEVER published to a host port: core-server dials the container by name over
+# the shared docker network. The only gate is the derived token
+# (TSHOCK_REST_TOKEN), so keeping this off the host firewall surface matters.
+EXPOSE 7878/tcp
 
 ENV TERRARIA_WORLD=cfg-world \
     TERRARIA_PORT=7777 \
     TERRARIA_MAXPLAYERS=8 \
     TERRARIA_DIFFICULTY=0 \
     TERRARIA_AUTOCREATE=2 \
-    TERRARIA_MOTD="Crit-Fumble Terraria Server"
+    TERRARIA_MOTD="Crit-Fumble Terraria Server" \
+    TSHOCK_REST_PORT=7878
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

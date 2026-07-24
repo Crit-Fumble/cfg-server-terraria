@@ -28,6 +28,13 @@
 #   TERRARIA_MAXPLAYERS  — player cap (default: 16)
 #   TERRARIA_PASSWORD    — server password (default: none)
 #   TERRARIA_MOTD        — server motd (default: 'Crit-Fumble Terraria Server')
+#   TSHOCK_REST_TOKEN    — application REST token for TShock's REST API.
+#                          Set by core-server (derived per install); when
+#                          blank the REST API stays DISABLED — standalone
+#                          `docker run` users get vanilla-equivalent
+#                          behavior with no unauthenticated admin surface.
+#   TSHOCK_REST_PORT     — REST listen port (default 7878; docker-network
+#                          only, never published to a host port)
 #
 # `-config` is NOT used: Terraria 1.4.5+ silently ignores autocreate
 # when it reads from a config file. CLI flags are the documented stable
@@ -40,6 +47,11 @@ WORLD_DIR=/worlds
 CONFIG="$WORLD_DIR/serverconfig.txt"
 WORLD_NAME="${TERRARIA_WORLD:-cfg-world}"
 WORLD_FILE="$WORLD_DIR/${WORLD_NAME}.wld"
+# TShock state (config.json, sqlite user/group/ban DB, logs) lives ON THE
+# VOLUME so registered users and bans survive container replacement.
+TSHOCK_DIR="$WORLD_DIR/tshock"
+REST_TOKEN="${TSHOCK_REST_TOKEN:-}"
+REST_PORT="${TSHOCK_REST_PORT:-7878}"
 
 WORLD_SIZE="${TERRARIA_AUTOCREATE:-2}"
 WORLD_EVIL="${TERRARIA_WORLDEVIL:--1}"
@@ -70,7 +82,44 @@ upnp=0
 secure=1
 EOF
 
-cd /opt/terraria
+# ── TShock config seeding ───────────────────────────────────────────────────
+# TShock reads config.json from -configpath and rewrites it with full defaults
+# on boot, PRESERVING any values already set — so seeding a minimal file with
+# only the keys we care about is stable across boots. Seed-if-absent: a user
+# who hand-edits /worlds/tshock/config.json keeps their edits.
+#
+# The REST token is deterministic per install (HMAC over CORE_SECRET on the
+# platform side), so "absent" only ever happens on first boot. The token's
+# group is superadmin: the probe only READS /v2/server/status, but the token
+# also serves the platform's future admin actions (kick/ban from the UI).
+mkdir -p "$TSHOCK_DIR/logs"
+if [ ! -f "$TSHOCK_DIR/config.json" ]; then
+  if [ -n "$REST_TOKEN" ]; then
+    echo "[cfg-server-terraria] seeding $TSHOCK_DIR/config.json (REST enabled on :$REST_PORT)"
+    cat > "$TSHOCK_DIR/config.json" <<EOF
+{
+  "Settings": {
+    "RestApiEnabled": true,
+    "RestApiPort": $REST_PORT,
+    "ApplicationRestTokens": {
+      "$REST_TOKEN": {
+        "Username": "cfg-platform",
+        "UserGroupName": "superadmin"
+      }
+    }
+  }
+}
+EOF
+  else
+    echo "[cfg-server-terraria] no TSHOCK_REST_TOKEN — REST API stays disabled"
+  fi
+fi
+
+# CWD stays on the VOLUME (/worlds), not /opt/terraria: TerrariaApi.Server's
+# ServerLogWriter opens ServerLog.txt relative to the process's working dir
+# during static init — before -logpath is even parsed — and /opt/terraria is
+# root-owned by design. Running from /worlds lands that file on the volume.
+# (Exact sibling of the Factorio .lock EACCES fix.)
 
 # Build the optional flags carefully so empty values don't materialize
 # as `-password ''` / `-seed ''` on the command line (Terraria treats
@@ -88,9 +137,11 @@ if [ "$WORLD_EVIL" = "0" ] || [ "$WORLD_EVIL" = "1" ]; then
   EXTRA_FLAGS+=(-worldevil "$WORLD_EVIL")
 fi
 
-echo "[cfg-server-terraria] starting Terraria server on port $PORT_NUM (world=$WORLD_FILE, autocreate=$WORLD_SIZE, evil=$WORLD_EVIL, difficulty=$DIFF, seed=$([ -n "$SEED" ] && echo "set" || echo "random"))"
+echo "[cfg-server-terraria] starting TShock server on port $PORT_NUM (world=$WORLD_FILE, autocreate=$WORLD_SIZE, evil=$WORLD_EVIL, difficulty=$DIFF, seed=$([ -n "$SEED" ] && echo "set" || echo "random"), rest=$([ -n "$REST_TOKEN" ] && echo "on:$REST_PORT" || echo "off"))"
 
-exec ./TerrariaServer.bin.x86_64 \
+# TShock.Server accepts the vanilla flags 1:1 and adds -configpath/-logpath
+# (where config.json + sqlite + logs live — pointed at the volume above).
+exec /opt/terraria/TShock.Server \
   -world "$WORLD_FILE" \
   -autocreate "$WORLD_SIZE" \
   -worldname "$WORLD_NAME" \
@@ -99,4 +150,6 @@ exec ./TerrariaServer.bin.x86_64 \
   -difficulty "$DIFF" \
   -secure \
   -noupnp \
+  -configpath "$TSHOCK_DIR" \
+  -logpath "$TSHOCK_DIR/logs" \
   "${EXTRA_FLAGS[@]}"
