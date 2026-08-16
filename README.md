@@ -30,6 +30,11 @@ A user-supplied `/worlds/serverconfig.txt` (e.g. mounted in by core-server) take
 
 ## CFG-hosted usage
 
+> ℹ️ **`cfg-core-server` is a private CFG repo.** The paths below are named for orientation —
+> they are not links you can open. **Nothing in this repo depends on them:** the container runs
+> standalone with the `docker run` above, and the CFG integration is one consumer of it, not a
+> requirement.
+
 Core-server provisions one container per `UserAppInstallation` via the Server Manager kind-registry:
 
 - adapter: `cfg-core-server/src/services/server-manager/kinds/terraria.ts`
