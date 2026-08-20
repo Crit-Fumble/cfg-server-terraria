@@ -47,8 +47,10 @@ Billing tick (CT per uptime hour) is owned by the adapter, same shape as `kinds/
 
 ```sh
 docker build -t cfg-server-terraria:local .
-# Pin to a specific Terraria version:
-docker build --build-arg TERRARIA_VERSION=1456 -t cfg-server-terraria:1.4.5.6 .
+# Build a different upstream: TShock is compiled against ONE exact Terraria
+# version, so these two move together — take both from the TShock release name.
+docker build --build-arg TSHOCK_VERSION=6.1.0 --build-arg TERRARIA_COMPAT=1.4.5.6 \
+  -t cfg-server-terraria:6.1.0 .
 ```
 
 CI publishes `ghcr.io/crit-fumble/cfg-server-terraria` on tagged releases (see `.github/workflows/build.yml`).

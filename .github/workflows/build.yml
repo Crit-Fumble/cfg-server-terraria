@@ -24,12 +24,15 @@ on:
   # cfg-server-cauldronvtt and cfg-server-codeserver.
   pull_request:
     branches: [main, next]
+  # ⛔ NO VERSION INPUT, DELIBERATELY. There was a `terraria_version` input here
+  # feeding `--build-arg TERRARIA_VERSION`, but the Dockerfile has never declared
+  # that ARG — it pins TSHOCK_VERSION + TERRARIA_COMPAT, which must move together
+  # because TShock is built against one exact Terraria version. So the input was a
+  # no-op that LOOKED like an override: dispatching with 1449 silently built 1.4.5.6
+  # anyway. Dead since the initial scaffold (1d8d084). The Dockerfile ARGs are the
+  # only home for the pin, and upstream-watch writes them; a real override would
+  # have to take both values, and nobody has needed one.
   workflow_dispatch:
-    inputs:
-      terraria_version:
-        description: 'Terraria server version (e.g. 1456 for 1.4.5.6)'
-        required: false
-        default: '1456'
 
 permissions:
   contents: read
@@ -76,7 +79,5 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            TERRARIA_VERSION=${{ github.event.inputs.terraria_version || '1456' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
