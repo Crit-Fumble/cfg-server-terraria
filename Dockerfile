@@ -24,8 +24,8 @@
 # CFG-hosted: core-server provisions one container per user installation via
 # the Server Manager kind-registry (kinds/terraria.ts → services/terraria/launch.ts).
 
-ARG TSHOCK_VERSION=6.1.0
-ARG TERRARIA_COMPAT=1.4.5.6
+ARG TSHOCK_VERSION=6.2.1
+ARG TERRARIA_COMPAT=1.4.5.8
 
 FROM debian:bookworm-slim AS extract
 
