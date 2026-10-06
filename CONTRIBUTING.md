@@ -1,8 +1,9 @@
 # Contributing to cfg-server-terraria
 
-This repo is a thin container around the official Terraria dedicated server —
-a `Dockerfile`, an `entrypoint.sh`, and nothing else. There is no Node
-toolchain and no test suite; **Docker is the only prerequisite**.
+This repo is a thin container around TShock (Pryaxis), which wraps the official
+Terraria dedicated server engine 1:1 — a `Dockerfile`, an `entrypoint.sh`, and
+nothing else. There is no Node toolchain and no test suite; **Docker is the
+only prerequisite**.
 
 ## Build & run locally
 
@@ -13,9 +14,9 @@ docker run --rm -p 7777:7777 -v "$PWD/worlds:/worlds" cfg-server-terraria:local
 
 The README documents the env-var config knobs and the CFG-hosted usage. When
 changing `entrypoint.sh`, verify by hand that a fresh container still
-auto-creates a world, that a mounted `serverconfig.txt` still takes precedence
-over the env template, and that `docker stop` completes the final save
-(SIGTERM via tini).
+auto-creates a world, that `/worlds/tshock/config.json` is seeded only when
+absent (so a user's hand edits survive a restart), and that `docker stop`
+completes the final save (SIGTERM via tini).
 
 ## Commit messages & PRs
 

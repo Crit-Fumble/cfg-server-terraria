@@ -2,7 +2,9 @@
 
 Thin container around the official [Terraria dedicated server](https://terraria.org/server). Used by Crit-Fumble's Server Manager to host per-user Terraria instances under the `kind=terraria` adapter.
 
-No mods, no plugins, no Steam dependency — just the upstream server binary, extracted onto `debian-slim`, run as a non-root user (`uid=1000`), with worlds living in a `/worlds` volume.
+The image runs TShock (Pryaxis), which wraps the official Terraria server engine 1:1 for gameplay and adds the REST admin API
+core-server's activity probe reads. No Steam dependency; a .NET 9 `bookworm-slim` base running as non-root `uid=1000`, with worlds and
+TShock's own state (`/worlds/tshock`: config, sqlite DB, logs) in the `/worlds` volume.
 
 ## Run standalone
 
@@ -26,7 +28,10 @@ First boot auto-creates `cfg-world.wld` (medium classic) if `/worlds/` is empty.
 | `TERRARIA_MOTD` | _Crit-Fumble Terraria Server_ | message of the day |
 | `TERRARIA_SEED` | _(empty, random)_ | world seed |
 
-A user-supplied `/worlds/serverconfig.txt` (e.g. mounted in by core-server) takes precedence over the env-driven template.
+`/worlds/serverconfig.txt` is rewritten from these env vars on every boot, for inspection and manual recovery only: the server runs on
+CLI flags (Terraria 1.4.5+ silently ignores `autocreate` when it reads a config file), so editing or mounting that file changes nothing.
+TShock's own settings live in `/worlds/tshock/config.json`, which the entrypoint seeds only when absent (REST API on only if
+`TSHOCK_REST_TOKEN` is set), so hand edits there persist.
 
 ## CFG-hosted usage
 
@@ -40,8 +45,6 @@ Core-server provisions one container per `UserAppInstallation` via the Server Ma
 - adapter: `cfg-core-server/src/services/server-manager/kinds/terraria.ts`
 - launcher: `cfg-core-server/src/services/terraria/launch.ts`
 - volume: `/mnt/cfg_user_storage/users/<userId>/installations/<installationId>/data/` → `/worlds`
-
-Billing tick (CT per uptime hour) is owned by the adapter, same shape as `kinds/foundryvtt.ts`.
 
 ## Build
 
