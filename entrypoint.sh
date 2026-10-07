@@ -2,7 +2,7 @@
 #
 # cfg-server-terraria entrypoint.
 #
-# Phase 1 (multi-world): the platform side maintains many CoreGameWorld
+# Multi-world: the platform side maintains many CoreGameWorld
 # records per installation; exactly one is active at a time. The
 # launcher resolves it and hands its gen params here as env. The
 # entrypoint translates them into TerrariaServer CLI flags and
@@ -119,7 +119,7 @@ fi
 # ServerLogWriter opens ServerLog.txt relative to the process's working dir
 # during static init — before -logpath is even parsed — and /opt/terraria is
 # root-owned by design. Running from /worlds lands that file on the volume.
-# (Exact sibling of the Factorio .lock EACCES fix.)
+# (Same trap as the Factorio .lock EACCES.)
 
 # Build the optional flags carefully so empty values don't materialize
 # as `-password ''` / `-seed ''` on the command line (Terraria treats
