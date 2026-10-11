@@ -82,12 +82,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
       tini && \
     rm -rf /var/lib/apt/lists/* && \
-    useradd --system --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin terraria && \
-    # The engine writes favorites.json to $HOME/.local/share/Terraria on first
-    # boot; with --no-create-home that throws a (caught but noisy)
-    # DirectoryNotFoundException. Pre-create the tree so the write succeeds.
-    mkdir -p /home/terraria/.local/share/Terraria && \
-    chown -R terraria:terraria /home/terraria
+    useradd --system --uid 1000 --user-group --no-create-home --shell /usr/sbin/nologin terraria
 
 COPY --from=extract /opt/terraria /opt/terraria
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -99,6 +94,12 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN mkdir -p /worlds && chown -R terraria:terraria /worlds
 
 USER terraria
+# The entrypoint makes this dir at start, private to whatever uid the container
+# runs as. It is not in the image: a uid given with `--user` could not write a
+# dir baked in for uid 1000, and the image holds nothing writable by "anyone".
+# Set here because Docker takes HOME from /etc/passwd, where such a uid has no
+# entry: HOME would be `/`.
+ENV HOME=/tmp/terraria-home
 WORKDIR /worlds
 
 EXPOSE 7777/tcp

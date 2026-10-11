@@ -43,6 +43,15 @@
 
 set -euo pipefail
 
+# A home of this uid's own, mode 0700, made here rather than baked into the
+# image (see the Dockerfile). Two things need one. .NET unpacks TShock's
+# single-file bundle under $HOME before anything else runs. And the engine
+# writes favorites.json to $HOME/.local/share/Terraria on first boot without
+# creating the dir: a caught but noisy DirectoryNotFoundException.
+mkdir -p -m 0700 "$HOME"
+[ -O "$HOME" ] || { echo "[cfg-server-terraria] FATAL: $HOME belongs to another uid" >&2; exit 1; }
+mkdir -p "$HOME/.local/share/Terraria"
+
 WORLD_DIR=/worlds
 CONFIG="$WORLD_DIR/serverconfig.txt"
 WORLD_NAME="${TERRARIA_WORLD:-cfg-world}"
