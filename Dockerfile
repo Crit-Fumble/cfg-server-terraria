@@ -72,9 +72,10 @@ LABEL org.opencontainers.image.source="https://github.com/Crit-Fumble/cfg-server
 LABEL org.opencontainers.image.licenses="AGPL-3.0-only"
 LABEL org.opencontainers.image.version="${TSHOCK_VERSION}-terraria${TERRARIA_COMPAT}"
 
-# tini reaps zombies and forwards SIGTERM so `docker stop` shuts the server
-# cleanly (worlds are written on graceful exit; SIGKILL leaves dirty .wld
-# files). The .NET base image already carries ICU/zlib/libstdc++.
+# tini reaps zombies and forwards SIGTERM to the entrypoint, which tells TShock
+# to save the world and exit — TShock itself does not save on SIGTERM, and
+# SIGKILL leaves dirty .wld files. The .NET base image already carries
+# ICU/zlib/libstdc++.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \

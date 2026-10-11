@@ -8,8 +8,8 @@
 # entrypoint translates them into TerrariaServer CLI flags and
 # autocreates the .wld on first boot if it isn't already on disk.
 #
-# tini (PID 1) reaps zombies and forwards SIGTERM so worlds save
-# cleanly on `docker stop`.
+# tini (PID 1) reaps zombies and forwards SIGTERM to this script, which
+# tells TShock to save the world and exit (see the end of this file).
 #
 # Env knobs (set by core-server's launcher; defaults are for standalone
 # `docker run` usage):
@@ -139,9 +139,15 @@ fi
 
 echo "[cfg-server-terraria] starting TShock server on port $PORT_NUM (world=$WORLD_FILE, autocreate=$WORLD_SIZE, evil=$WORLD_EVIL, difficulty=$DIFF, seed=$([ -n "$SEED" ] && echo "set" || echo "random"), rest=$([ -n "$REST_TOKEN" ] && echo "on:$REST_PORT" || echo "off"))"
 
+# TShock exits on SIGTERM WITHOUT saving the world, so exec'ing it here would make
+# every `docker stop` lose whatever changed since the last save. Its console
+# `exit` command does save. So TShock runs as a child with a pipe on stdin, and
+# the stop signal tini forwards to this script becomes `exit` on that pipe.
+# tini signals this script only, never TShock, so the signal cannot race the save.
+#
 # TShock.Server accepts the vanilla flags 1:1 and adds -configpath/-logpath
 # (where config.json + sqlite + logs live — pointed at the volume above).
-exec /opt/terraria/TShock.Server \
+exec 3> >(exec /opt/terraria/TShock.Server \
   -world "$WORLD_FILE" \
   -autocreate "$WORLD_SIZE" \
   -worldname "$WORLD_NAME" \
@@ -152,4 +158,23 @@ exec /opt/terraria/TShock.Server \
   -noupnp \
   -configpath "$TSHOCK_DIR" \
   -logpath "$TSHOCK_DIR/logs" \
-  "${EXTRA_FLAGS[@]}"
+  "${EXTRA_FLAGS[@]}")
+TSHOCK_PID=$!
+
+request_stop() {
+  echo "[cfg-server-terraria] stop requested — telling TShock to save and exit"
+  echo exit >&3 || true
+}
+# If TShock is already gone the pipe is closed: the write must fail, not kill this script.
+trap '' PIPE
+trap request_stop TERM INT
+
+# A trapped signal makes `wait` return early (status > 128) while TShock is
+# still saving — wait again for its real exit status.
+rc=0
+wait "$TSHOCK_PID" || rc=$?
+while [ "$rc" -gt 128 ] && kill -0 "$TSHOCK_PID" 2>/dev/null; do
+  rc=0
+  wait "$TSHOCK_PID" || rc=$?
+done
+exit "$rc"
