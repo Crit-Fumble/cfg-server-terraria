@@ -13,7 +13,7 @@ docker run --rm -p 7777:7777 -v $(pwd)/worlds:/worlds \
   ghcr.io/crit-fumble/cfg-server-terraria:latest
 ```
 
-First boot auto-creates `cfg-world.wld` (medium classic) if `/worlds/` is empty. The world saves on every clean exit — `docker stop` forwards SIGTERM via tini so saves complete.
+First boot auto-creates `cfg-world.wld` (medium classic) if `/worlds/` is empty. `docker stop` saves the world before the server exits: the entrypoint turns the stop signal into TShock's `exit` console command, because TShock does not save on SIGTERM by itself.
 
 ## Config knobs (env vars)
 
