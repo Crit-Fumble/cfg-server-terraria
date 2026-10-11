@@ -3,7 +3,7 @@
 Thin container around the official [Terraria dedicated server](https://terraria.org/server). Used by Crit-Fumble's Server Manager to host per-user Terraria instances under the `kind=terraria` adapter.
 
 The image runs TShock (Pryaxis), which wraps the official Terraria server engine 1:1 for gameplay and adds the REST admin API
-core-server's activity probe reads. No Steam dependency; a .NET 9 `bookworm-slim` base running as non-root `uid=1000`, with worlds and
+core-server's activity probe reads. No Steam dependency; a .NET 9 `bookworm-slim` base running as non-root `uid=1000` (or any uid given with `--user`), with worlds and
 TShock's own state (`/worlds/tshock`: config, sqlite DB, logs) in the `/worlds` volume.
 
 ## Run standalone
