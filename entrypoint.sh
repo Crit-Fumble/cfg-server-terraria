@@ -140,11 +140,15 @@ fi
 if [ -n "$SEED" ]; then
   EXTRA_FLAGS+=(-seed "$SEED")
 fi
-# `-worldevil` takes 0/1; -1 means "let Terraria pick", and the
-# canonical way to express that on the CLI is to omit the flag.
-if [ "$WORLD_EVIL" = "0" ] || [ "$WORLD_EVIL" = "1" ]; then
-  EXTRA_FLAGS+=(-worldevil "$WORLD_EVIL")
-fi
+# TShock's `-worldevil` takes the words `corrupt` and `crimson`, not the 0/1
+# the env contract (and vanilla's serverconfig) uses: a number makes TShock
+# abort at startup. -1 means "let Terraria pick", which on the CLI is no flag.
+case "$WORLD_EVIL" in
+  0)  EXTRA_FLAGS+=(-worldevil corrupt) ;;
+  1)  EXTRA_FLAGS+=(-worldevil crimson) ;;
+  -1) ;;
+  *)  echo "[cfg-server-terraria] FATAL: TERRARIA_WORLDEVIL must be -1, 0 or 1 (got '$WORLD_EVIL')" >&2; exit 1 ;;
+esac
 
 echo "[cfg-server-terraria] starting TShock server on port $PORT_NUM (world=$WORLD_FILE, autocreate=$WORLD_SIZE, evil=$WORLD_EVIL, difficulty=$DIFF, seed=$([ -n "$SEED" ] && echo "set" || echo "random"), rest=$([ -n "$REST_TOKEN" ] && echo "on:$REST_PORT" || echo "off"))"
 
@@ -154,8 +158,18 @@ echo "[cfg-server-terraria] starting TShock server on port $PORT_NUM (world=$WOR
 # the stop signal tini forwards to this script becomes `exit` on that pipe.
 # tini signals this script only, never TShock, so the signal cannot race the save.
 #
+# TShock's console output goes through a reader that watches for a startup
+# abort. TShock survives its own abort: it logs it and then waits on stdin,
+# which this script holds open for the `exit` above, so the container would
+# sit "running" with no server behind it, billed and never ready. The reader
+# ends TShock instead, and this script exits non-zero below.
+#
 # TShock.Server accepts the vanilla flags 1:1 and adds -configpath/-logpath
 # (where config.json + sqlite + logs live — pointed at the volume above).
+CONSOLE_FIFO="$HOME/tshock-console"
+ABORT_MARK="$HOME/tshock-aborted"
+rm -f "$CONSOLE_FIFO" "$ABORT_MARK"
+mkfifo -m 0600 "$CONSOLE_FIFO"
 exec 3> >(exec /opt/terraria/TShock.Server \
   -world "$WORLD_FILE" \
   -autocreate "$WORLD_SIZE" \
@@ -167,8 +181,21 @@ exec 3> >(exec /opt/terraria/TShock.Server \
   -noupnp \
   -configpath "$TSHOCK_DIR" \
   -logpath "$TSHOCK_DIR/logs" \
-  "${EXTRA_FLAGS[@]}")
+  "${EXTRA_FLAGS[@]}" > "$CONSOLE_FIFO" 2>&1)
 TSHOCK_PID=$!
+
+(
+  while IFS= read -r line; do
+    printf '%s\n' "$line"
+    case "$line" in
+      *"Startup aborted"*)
+        touch "$ABORT_MARK"
+        kill -TERM "$TSHOCK_PID" 2>/dev/null || true
+        ;;
+    esac
+  done < "$CONSOLE_FIFO"
+) &
+READER_PID=$!
 
 request_stop() {
   echo "[cfg-server-terraria] stop requested — telling TShock to save and exit"
@@ -186,4 +213,10 @@ while [ "$rc" -gt 128 ] && kill -0 "$TSHOCK_PID" 2>/dev/null; do
   rc=0
   wait "$TSHOCK_PID" || rc=$?
 done
+# The reader drains TShock's last lines once the FIFO's write end closes.
+wait "$READER_PID" 2>/dev/null || true
+if [ -e "$ABORT_MARK" ]; then
+  echo "[cfg-server-terraria] FATAL: TShock aborted at startup (see the lines above); exiting instead of waiting on a dead server" >&2
+  exit 1
+fi
 exit "$rc"

@@ -24,6 +24,7 @@ First boot auto-creates `cfg-world.wld` (medium classic) if `/worlds/` is empty.
 | `TERRARIA_MAXPLAYERS` | `8` | player cap |
 | `TERRARIA_DIFFICULTY` | `0` | 0 classic / 1 expert / 2 master / 3 journey |
 | `TERRARIA_AUTOCREATE` | `2` | 1 small / 2 medium / 3 large; first-boot only |
+| `TERRARIA_WORLDEVIL` | `-1` | -1 random / 0 corruption / 1 crimson; first-boot only |
 | `TERRARIA_PASSWORD` | _(empty)_ | server password |
 | `TERRARIA_MOTD` | _Crit-Fumble Terraria Server_ | message of the day |
 | `TERRARIA_SEED` | _(empty, random)_ | world seed |
