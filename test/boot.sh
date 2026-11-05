@@ -45,7 +45,9 @@ grep -q 'TERRARIA_WORLDEVIL must be -1, 0 or 1' "$WORK/bad.log" || { cat "$WORK/
 for evil in -1 0 1; do
   name="$RUN-${evil#-}"; [ "$evil" = "-1" ] && name="$RUN-m1"
   mkdir -p "$WORK/$name"
-  docker run -d --name "$name" -e TERRARIA_AUTOCREATE=1 -e "TERRARIA_WORLDEVIL=$evil" \
+  # As the uid that owns the mount, the way the platform runs a member's server on that member's own volume. A
+  # Linux host enforces the 0700 owner of a mktemp dir, which Docker Desktop's bind mounts hide.
+  docker run -d --name "$name" --user "$(id -u):$(id -g)" -e TERRARIA_AUTOCREATE=1 -e "TERRARIA_WORLDEVIL=$evil" \
     -v "$WORK/$name:/worlds" "$IMAGE" >/dev/null
 done
 
