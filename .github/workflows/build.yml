@@ -41,7 +41,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Boots the image for each world-evil value and proves it listens, saves and
+  # exits 0 (test/boot.sh). The publish waits on it: a TShock that aborts at
+  # startup used to leave a "running" container that never listened.
+  boot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build
+        run: docker build -t cfg-server-terraria:test .
+
+      - name: Boot each world evil
+        run: IMAGE_PREBUILT=1 test/boot.sh
+
   build:
+    needs: boot
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
