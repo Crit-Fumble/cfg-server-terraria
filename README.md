@@ -3,7 +3,7 @@
 Thin container around the official [Terraria dedicated server](https://terraria.org/server). Used by Crit-Fumble's Server Manager to host per-user Terraria instances under the `kind=terraria` adapter.
 
 The image runs TShock (Pryaxis), which wraps the official Terraria server engine 1:1 for gameplay and adds the REST admin API
-core-server's activity probe reads. No Steam dependency; a .NET 9 `bookworm-slim` base running as non-root `uid=1000` (or any uid given with `--user`), with worlds and
+core-server's activity probe reads. No Steam dependency; it runs as non-root `uid=1000` (or any uid given with `--user`), with worlds and
 TShock's own state (`/worlds/tshock`: config, sqlite DB, logs) in the `/worlds` volume.
 
 ## Run standalone
@@ -13,7 +13,8 @@ docker run --rm -p 7777:7777 -v $(pwd)/worlds:/worlds \
   ghcr.io/crit-fumble/cfg-server-terraria:latest
 ```
 
-First boot auto-creates `cfg-world.wld` (medium classic) if `/worlds/` is empty. `docker stop` saves the world before the server exits: the entrypoint turns the stop signal into TShock's `exit` console command, because TShock does not save on SIGTERM by itself.
+First boot auto-creates `cfg-world.wld` (medium classic) if `/worlds/` is empty. `docker stop` saves the world before the server exits
+(`entrypoint.sh` says how: TShock does not save on SIGTERM by itself).
 
 ## Config knobs (env vars)
 
@@ -36,16 +37,9 @@ TShock's own settings live in `/worlds/tshock/config.json`, which the entrypoint
 
 ## CFG-hosted usage
 
-> ℹ️ **`cfg-core-server` is a private CFG repo.** The paths below are named for orientation —
-> they are not links you can open. **Nothing in this repo depends on them:** the container runs
-> standalone with the `docker run` above, and the CFG integration is one consumer of it, not a
-> requirement.
-
-Core-server provisions one container per `UserAppInstallation` via the Server Manager kind-registry:
-
-- adapter: `cfg-core-server/src/services/server-manager/kinds/terraria.ts`
-- launcher: `cfg-core-server/src/services/terraria/launch.ts`
-- volume: `/mnt/cfg_user_storage/users/<userId>/installations/<installationId>/data/` → `/worlds`
+Crit-Fumble hosts one container per member's server through its own (private) platform. Nothing in this
+repo depends on that: the container runs standalone with the `docker run` above, and the platform is one
+consumer of it, mounting a member's server data at `/worlds`.
 
 ## Build
 

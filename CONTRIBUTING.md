@@ -2,7 +2,7 @@
 
 This repo is a thin container around TShock (Pryaxis), which wraps the official
 Terraria dedicated server engine 1:1 — a `Dockerfile`, an `entrypoint.sh`, and
-one boot test. There is no Node toolchain; **Docker is the only prerequisite**.
+a boot test. There is no Node toolchain; **Docker is the only prerequisite**.
 
 ## Build & run locally
 
@@ -12,9 +12,8 @@ docker run --rm -p 7777:7777 -v "$PWD/worlds:/worlds" cfg-server-terraria:local
 ```
 
 The README documents the env-var config knobs and the CFG-hosted usage. When
-changing `entrypoint.sh`, run `test/boot.sh` (CI runs it before every publish):
-it boots a fresh container per world-evil value and proves each one listens,
-saves on `docker stop` and exits 0. Verify by hand what it does not cover:
+changing `entrypoint.sh`, run `test/boot.sh` (CI runs it before every publish;
+its header says what it proves). Verify by hand what it does not cover:
 `/worlds/tshock/config.json` is seeded only when absent (so a user's hand edits
 survive a restart).
 
